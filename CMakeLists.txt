@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(beuyyub VERSION 1.0 DESCRIPTION "Official IT1162i Discord bot")
+project(beuyyub VERSION 1.1.1 DESCRIPTION "Official IT1162i Discord bot")
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
