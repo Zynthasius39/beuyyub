@@ -7,23 +7,34 @@
 #include <thread>
 #include <mutex>
 
-#include "d1162ip.h"
+#include "d1162ip2.hpp"
 
 #define LANG "../lang/az-AZ.lang"
 
-d1162ip::language l;
+d1162ip::language l(LANG);
+// d1162ip::guild guilds;
+std::mutex taskMtx;
+std::condition_variable taskCv;
+std::queue<std::function<void()>> taskQueue;
 
-// Guild specific - to be fixed !
+// Debugging:
+d1162ip::player plyr;
 
 int main(int argc, char const *argv[]) {
     std::string token;
-    std::map<dpp::snowflake, d1162ip::mutex> m;
+    // std::map<dpp::snowflake, d1162ip::mutex> m;
 
-    //Get token from STDIN (probably from encryption software) 
+    //Get token from STDIN (probably from an encryption software) 
     std::cin >> token;
     dpp::cluster bot(token, dpp::i_default_intents | dpp::i_message_content);
 
-    l = d1162ip::language(LANG);
+    std::thread T_Download(d1162ip::taskThread, std::ref(taskQueue), std::ref(taskMtx), std::ref(taskCv));
+    std::thread T_Player(d1162ip::playerThread, std::ref(plyr), std::ref(l.lang));
+
+    std::cout << "T_Download: " << T_Download.get_id() << std::endl;
+    std::cout << "T_Player: " << T_Player.get_id() << std::endl;
+    T_Download.detach();
+    T_Player.detach();
 
     bot.on_log(dpp::utility::cout_logger());
 
@@ -57,11 +68,8 @@ int main(int argc, char const *argv[]) {
                 event.reply(dpp::message(event.command.channel_id, embed));
                 return;
             }
+            d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, lasturl, std::ref(plyr), std::ref(l.lang));
             event.reply(dpp::message("Downloading... ?"));
-            d1162ip obj;
-            std::thread t(d1162ip::ytdlp_thread, std::ref(bot), event, lasturl);
-            t.detach();
-            bot.log(dpp::loglevel::ll_info, "* Thread detached !");
         } else if (cmd == "skip"){
             dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
             dpp::embed embed = dpp::embed()
@@ -80,13 +88,22 @@ int main(int argc, char const *argv[]) {
             embed.set_title(l.lang["msg"]["d162ip_replay_1"].asCString())
                 .add_field(
                     l.lang["msg"]["d162ip_replay_2"].asCString(),
-                    latesturl
+                    // guilds.get_latesturl(event.command.guild_id)
+                    "None"
                 );
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "status"){
+            bot.log(dpp::loglevel::ll_warning, "Status request from <- " + event.command.get_guild().name);
             dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
             dpp::embed embed = dpp::embed()
                 .set_color(dpp::colors::yellow);
+            // auto* guildPtr = guilds.get_guilds();
+            // for (const auto &guild : *guildPtr) {
+            //     embed.add_field(
+            //         guild.second.guild_name,
+            //         guild.first.str()
+            //     );
+            // }
             if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
                embed.set_title(l.lang["msg"]["d162ip_status_err"].asCString());
                event.reply(dpp::message(event.command.channel_id, embed));
@@ -170,6 +187,22 @@ int main(int argc, char const *argv[]) {
         }
     });
 
+    bot.on_guild_create([&bot](const dpp::guild_create_t& event) {
+        bot.log(dpp::loglevel::ll_info, "Joined to -> " + event.created->name);
+        // guilds.add_guild(event.created->id, event.created->name);
+
+        // std::map<const dpp::snowflake, d1162ip::player>* guildsPtr = guilds.get_guilds();
+        // if (guildsPtr) {
+        //     auto guild = guildsPtr->find(event.created->id);
+        //     if (guild != guildsPtr->end()) {
+        //         std::thread T_Player(d1162ip::playerThread, std::ref(guild->second), std::ref(l.lang));
+        //         T_Player.detach();
+        //         bot.log(dpp::loglevel::ll_debug, std::format("+Player thread for {}", event.created->name));
+        //     } else bot.log(dpp::loglevel::ll_critical, "Guild that just created not found in guilds object");
+        // } else bot.log(dpp::loglevel::ll_critical, "Couldn't access guilds object");
+    });
+
     bot.start(dpp::st_wait);
+
     return 0;
 }

@@ -1,0 +1,5 @@
+- Fixed music duration text
+- Added thread model to optimize playback
+- Added thread model to optimize download times
+- Added language support
+- Added limit to song duration for YouTube up to 10 minutes
