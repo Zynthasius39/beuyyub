@@ -40,7 +40,6 @@ int main(int argc, char const *argv[]) {
 
     bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
         const std::string cmd = event.command.get_command_name();
-
         if (cmd == "join"){
             dpp::guild* g = dpp::find_guild(event.command.guild_id);
             dpp::embed embed = dpp::embed()

@@ -68,7 +68,10 @@ public:
         }
     };
 
-    static void mp3toRaw(std::string filePath, std::vector<uint8_t>& pcm) {
+    static void mp3toRaw(std::string filePath, std::vector<uint8_t>& pcm, const dpp::slashcommand_t &event) {
+        dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+        if (!v || !v->voiceclient || !v->voiceclient->is_ready())
+            return;
         mpg123_init();
 
         const char* urll = filePath.c_str();
@@ -88,13 +91,21 @@ public:
         mpg123_open(mh, urll);
         mpg123_getformat(mh, &rate, &channels, &encoding);
 
+        std::vector<uint8_t> pcma;
         unsigned int counter = 0;
         for (int totalBytes = 0; mpg123_read(mh, buffer, buffer_size, &done) == MPG123_OK;){
             for (auto i = 0; i < buffer_size; i++){
-                pcm.push_back(buffer[i]);
+                pcma.push_back(buffer[i]);
             }
             counter += buffer_size;
             totalBytes += done;
+        }
+        if (v && v->voiceclient && v->voiceclient->is_ready()){
+            if (!pcma.empty()){
+                v->voiceclient->send_audio_raw((uint16_t*)pcma.data(), pcma.size());
+                pcma.clear();
+            }
+            v->voiceclient->insert_marker();
         }
         delete buffer;
         mpg123_close(mh);
@@ -118,7 +129,7 @@ public:
         return code;
     }
 
-    static void yt_main(dpp::cluster &bot, dpp::slashcommand_t event, std::string lastUrl, player &plyr, Json::Value &lang) {
+    static void yt_main(dpp::cluster &bot, const dpp::slashcommand_t event, std::string lastUrl, player &plyr, Json::Value &lang) {
         return_code rc; 
         dpp::embed embed = dpp::embed()
             .set_color(dpp::colors::aqua);
@@ -136,9 +147,7 @@ public:
                 yt_download(code, rc, lang["local"]["cacheDir"].asString());
             }
             
-            std::vector<uint8_t> pcm;
-            mp3toRaw(std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code), pcm);
-            add_player_task(event, plyr, pcm, lang);
+            // add_player_task(event, plyr, pcm, lang);
 
             std::ifstream urlJson(std::format("{}/{}.mp3.info.json", lang["local"]["cacheDir"].asString(), code), std::ifstream::binary);
             Json::Value urlName;
@@ -161,6 +170,10 @@ public:
             else bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT]", lang["msg"]["backend_added"].asString(), code));
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
             plyr.latestUrl = lastUrl;
+
+            // Experimental playback!
+            std::vector<uint8_t> pcm;
+            mp3toRaw(std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code), pcm, event);
         } else {
             embed.set_title(lang["msg"]["url_invalid"].asCString());
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
@@ -178,7 +191,19 @@ public:
     static void sp_main () {};         // Coming soon...
     static void sp_download () {};      // Coming soon...
 
+    static void playerSubStopThread(bool &sw, std::vector<uint8_t> &pcmdata){
+        // while (true) {
+            // if (sw) {
+                std::this_thread::sleep_for(std::chrono::seconds(10));
+                pcmdata.clear();
+                // sw = false;
+                // break;
+            // }
+        // }
+    }
+
     static void playerSubThread(const dpp::slashcommand_t event, std::vector<uint8_t> &pcmdata, Json::Value &lang) {
+        bool sw = false;
         dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
         if (!v || !v->voiceclient || !v->voiceclient->is_ready()) {
             dpp::embed embed = dpp::embed()
@@ -186,6 +211,8 @@ public:
                 .set_title(lang["msg"]["d162ip_play_err_3"].asCString());
             event.reply(dpp::message(event.command.channel_id, embed));
         }
+        std::thread T_Wait(playerSubStopThread, std::ref(sw), std::ref(pcmdata));
+        T_Wait.detach();
         v->voiceclient->send_audio_raw((uint16_t*)pcmdata.data(), pcmdata.size());
         v->voiceclient->insert_marker();
         pcmdata.clear();
@@ -209,7 +236,8 @@ public:
             std::function<void()> task = taskQueue.front();
             taskQueue.pop();
             lock.unlock();
-            std::async(std::launch::async, task);
+            std::thread T_Download_One(task);
+            T_Download_One.detach();
         }
     }
 
@@ -222,7 +250,7 @@ public:
         taskCv.notify_one();
     }
 
-    static void add_player_task(const dpp::slashcommand_t event, player &plyr, std::vector<uint8_t> &pcm, Json::Value &lang) {
+    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::vector<uint8_t> &pcm, Json::Value &lang) {
         std::function<void()> playback = std::bind(&playerSubThread, event, pcm, std::ref(lang));
         std::lock_guard<std::mutex> lock(plyr.playbackMtx);
         plyr.playerQueue.push(playback);
