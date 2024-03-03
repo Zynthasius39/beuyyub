@@ -3,10 +3,11 @@
 #include <dpp/dpp.h>
 #include <json/json.h>
 #include <mpg123.h>
+#include <ogg/ogg.h>
+#include <opus/opusfile.h>
 
-#define COM "'yt-dlp' --write-info-json -x --audio-format mp3 -o {}/{}.mp3 {} > logs 2> errs"
-
-std::vector<uint8_t> pcm;
+#define COM "'yt-dlp' --write-info-json -x -o {}/{} https://youtu.be/{} > logs 2> errs"
+#define MAX_HISTORY_SIZE 20
 
 class d1162ip {
 public:
@@ -21,52 +22,186 @@ public:
         YTDLP_MAX_DOWNLOAD = 101
     };
 
-    class player {
-    public:
-        std::mutex playbackMtx;
-        std::condition_variable playbackCv;
-        std::string latestUrl;
-        std::string guild_name;
-        std::vector<uint8_t> pcmdata;
-        std::queue<std::function<void()>> playerQueue;
-
-        player() : guild_name("Unknown") { };
-        player(std::string guildName) : guild_name(guildName) {};
+    enum class service {
+        YOUTUBE,
+        SPOTIFY,
+        DEEZER,
+        SOUNDCLOUD,
+        FILE
     };
 
+    typedef std::pair<std::string, service> Media;
+    typedef std::pair<std::string, const dpp::slashcommand_t> FileEvent;
+    typedef std::queue<Media> MediaQueue;
+    typedef std::queue<FileEvent> FileEventQueue;
 
-    // class guild {
-    // public:
-    //     void add_guild(const dpp::snowflake guild_id, std::string guild_name) {
-    //         m_Guilds.emplace(guild_id, player(guild_name));
-    //     }
+    class MediaHistory {
+    public:
+        MediaHistory(size_t maxsize) : maxsize_(maxsize) {};
 
-    //     void set_latesturl(const dpp::snowflake guild_id, std::string latesturl) {
-    //         m_Guilds[guild_id].latestUrl = latesturl;
-    //     }
+        void push(Media media) {
+            if (mediaqueue_.size() >= maxsize_) {
+                mediaqueue_.pop();
+            }
+            mediaqueue_.push(media);
+        }
 
-    //     std::string get_latesturl(const dpp::snowflake guild_id) {
-    //         return m_Guilds[guild_id].latestUrl;
-    //     }
+        void pop() { mediaqueue_.pop(); };
+        bool empty() { return mediaqueue_.empty(); };
+        Media front() { return mediaqueue_.front(); };
+        Media back() { return mediaqueue_.back(); };
+    private:
+        MediaQueue mediaqueue_;
+        size_t maxsize_;
+    };
 
-    //     std::map<const dpp::snowflake, player>* get_guilds() {
-    //         return &m_Guilds;
-    //     }
-    // private:
-    //     std::map<const dpp::snowflake, player> m_Guilds;
-    // };
+    class player {
+    public:
+        player() : guildName("Unknown"), mh(MAX_HISTORY_SIZE) {};
+        player(std::string guildName) : guildName(guildName), mh(MAX_HISTORY_SIZE) {};
+
+        MediaHistory mh;
+        FileEventQueue feq;
+        std::mutex playbackMtx;
+        std::condition_variable playbackCv;
+        std::string guildName;
+    };
+
+    /* class guild {
+    public:
+        void add_guild(const dpp::snowflake guild_id, std::string guild_name) {
+            m_Guilds.emplace(guild_id, player(guild_name));
+        }
+
+        void set_latesturl(const dpp::snowflake guild_id, std::string latesturl) {
+            m_Guilds[guild_id].latestUrl = latesturl;
+        }
+
+        std::string get_latesturl(const dpp::snowflake guild_id) {
+            return m_Guilds[guild_id].latestUrl;
+        }
+
+        std::map<const dpp::snowflake, player>* get_guilds() {
+            return &m_Guilds;
+        }
+    private:
+        std::map<const dpp::snowflake, player> m_Guilds;
+    }; */
 
     class language {
     public:
-        Json::Value lang;
-
         language(const char* file_path) {
             std::ifstream file(file_path, std::ifstream::binary);
             if (!file.is_open())
                 throw std::invalid_argument("Couldn't open language file!");
             file >> lang;
         }
+
+        Json::Value lang;
     };
+
+    static void opusStream(std::string filePath, const dpp::slashcommand_t &event) {
+        dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+
+        if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
+            return;
+        }
+
+        ogg_sync_state oy; 
+        ogg_stream_state os;
+        ogg_page og;
+        ogg_packet op;
+        OpusHead header;
+        char *buffer;
+
+        FILE *fd;
+
+        fd = fopen(filePath.c_str(), "rb");
+
+        fseek(fd, 0L, SEEK_END);
+        size_t sz = ftell(fd);
+        rewind(fd);
+
+        ogg_sync_init(&oy);
+
+        buffer = ogg_sync_buffer(&oy, sz);
+        fread(buffer, 1, sz, fd);
+
+        ogg_sync_wrote(&oy, sz);
+
+        if (ogg_sync_pageout(&oy, &og) != 1) {
+            fprintf(stderr,"Does not appear to be ogg stream.\n");
+            exit(1);
+        }
+
+        ogg_stream_init(&os, ogg_page_serialno(&og));
+
+        if (ogg_stream_pagein(&os,&og) < 0) {
+            fprintf(stderr,"Error reading initial page of ogg stream.\n");
+            exit(1);
+        }
+
+        if (ogg_stream_packetout(&os,&op) != 1) {
+            fprintf(stderr,"Error reading header packet of ogg stream.\n");
+            exit(1);
+        }
+
+        if (!(op.bytes > 8 && !memcmp("OpusHead", op.packet, 8))) {
+            fprintf(stderr,"Not an ogg opus stream.\n");
+            exit(1);
+        }
+
+        int err = opus_head_parse(&header, op.packet, op.bytes);
+        if (err) {
+            fprintf(stderr,"Not a ogg opus stream\n");
+            exit(1);
+        }
+
+        if (header.channel_count != 2 && header.input_sample_rate != 48000) {
+            fprintf(stderr,"Wrong encoding for Discord, must be 48000Hz sample rate with 2 channels.\n");
+            exit(1);
+        }
+
+        while (ogg_sync_pageout(&oy, &og) == 1) {
+            ogg_stream_init(&os, ogg_page_serialno(&og));
+
+            if(ogg_stream_pagein(&os,&og)<0) {
+                fprintf(stderr,"Error reading page of Ogg bitstream data.\n");
+                exit(1);
+            }
+
+            while (ogg_stream_packetout(&os,&op) != 0) {
+
+                if (op.bytes > 8 && !memcmp("OpusHead", op.packet, 8)) {
+                    int err = opus_head_parse(&header, op.packet, op.bytes);
+                    if (err) {
+                        fprintf(stderr,"Not a ogg opus stream\n");
+                        exit(1);
+                    }
+
+                    if (header.channel_count != 2 && header.input_sample_rate != 48000) {
+                        fprintf(stderr,"Wrong encoding for Discord, must be 48000Hz sample rate with 2 channels.\n");
+                        exit(1);
+                    }
+
+                    continue;
+                }
+
+                if (op.bytes > 8 && !memcmp("OpusTags", op.packet, 8))
+                    continue; 
+
+                int samples = opus_packet_get_samples_per_frame(op.packet, 48000);
+
+                v->voiceclient->send_audio_opus(op.packet, op.bytes, samples / 48);
+
+            }
+
+        }
+        v->voiceclient->insert_marker();
+        ogg_stream_clear(&os);
+        ogg_sync_clear(&oy);
+        // std::this_thread::sleep_for(std::chrono::seconds((int)v->voiceclient->get_secs_remaining() - 5));
+    }
 
     static void mp3toRaw(std::string filePath, std::vector<uint8_t>& pcm, const dpp::slashcommand_t &event) {
         dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
@@ -91,22 +226,17 @@ public:
         mpg123_open(mh, urll);
         mpg123_getformat(mh, &rate, &channels, &encoding);
 
-        std::vector<uint8_t> pcma;
         unsigned int counter = 0;
+
         for (int totalBytes = 0; mpg123_read(mh, buffer, buffer_size, &done) == MPG123_OK;){
             for (auto i = 0; i < buffer_size; i++){
-                pcma.push_back(buffer[i]);
+                pcm.push_back(buffer[i]);
             }
             counter += buffer_size;
             totalBytes += done;
         }
-        if (v && v->voiceclient && v->voiceclient->is_ready()){
-            if (!pcma.empty()){
-                v->voiceclient->send_audio_raw((uint16_t*)pcma.data(), pcma.size());
-                pcma.clear();
-            }
-            v->voiceclient->insert_marker();
-        }
+        v->voiceclient->send_audio_raw((uint16_t*)pcm.data(), pcm.size());
+        pcm.clear();
         delete buffer;
         mpg123_close(mh);
         mpg123_delete(mh);
@@ -134,22 +264,21 @@ public:
         dpp::embed embed = dpp::embed()
             .set_color(dpp::colors::aqua);
         std::string code = yt_code(lastUrl, rc);
-        std::string mp3 = std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code);
+        // std::string mp3 = std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code);
 
         if (rc == return_code::SUCCESS){
             if (std::filesystem::exists(
-                    std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code)) &&
+                    std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), code)) &&
                 std::filesystem::exists(
-                    std::format("{}/{}.mp3.info.json", lang["local"]["cacheDir"].asString(), code)))
+                    std::format("{}/{}.info.json", lang["local"]["cacheDir"].asString(), code)))
                 rc = return_code::FOUND_IN_CACHE;
             else {
                 event.edit_original_response(dpp::message(lang["msg"]["d162ip_download"].asString()));
                 yt_download(code, rc, lang["local"]["cacheDir"].asString());
             }
             
-            // add_player_task(event, plyr, pcm, lang);
 
-            std::ifstream urlJson(std::format("{}/{}.mp3.info.json", lang["local"]["cacheDir"].asString(), code), std::ifstream::binary);
+            std::ifstream urlJson(std::format("{}/{}.info.json", lang["local"]["cacheDir"].asString(), code), std::ifstream::binary);
             Json::Value urlName;
             urlJson >> urlName;
             embed.set_title(lang["msg"]["d162ip_added"].asString())
@@ -166,14 +295,12 @@ public:
                         .set_icon(lang["url"]["youtube_icon"].asString())
                 );
             if (rc == return_code::FOUND_IN_CACHE)
-                bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT]", lang["msg"]["backend_cached"].asString(), code));
+                bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT] Cached", lang["msg"]["backend_cached"].asString(), code));
             else bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT]", lang["msg"]["backend_added"].asString(), code));
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
-            plyr.latestUrl = lastUrl;
 
-            // Experimental playback!
-            std::vector<uint8_t> pcm;
-            mp3toRaw(std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code), pcm, event);
+            // Play
+            add_player_task(event, plyr, code, lang);
         } else {
             embed.set_title(lang["msg"]["url_invalid"].asCString());
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
@@ -191,17 +318,6 @@ public:
     static void sp_main () {};         // Coming soon...
     static void sp_download () {};      // Coming soon...
 
-    static void playerSubStopThread(bool &sw, std::vector<uint8_t> &pcmdata){
-        // while (true) {
-            // if (sw) {
-                std::this_thread::sleep_for(std::chrono::seconds(10));
-                pcmdata.clear();
-                // sw = false;
-                // break;
-            // }
-        // }
-    }
-
     static void playerSubThread(const dpp::slashcommand_t event, std::vector<uint8_t> &pcmdata, Json::Value &lang) {
         bool sw = false;
         dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
@@ -211,8 +327,6 @@ public:
                 .set_title(lang["msg"]["d162ip_play_err_3"].asCString());
             event.reply(dpp::message(event.command.channel_id, embed));
         }
-        std::thread T_Wait(playerSubStopThread, std::ref(sw), std::ref(pcmdata));
-        T_Wait.detach();
         v->voiceclient->send_audio_raw((uint16_t*)pcmdata.data(), pcmdata.size());
         v->voiceclient->insert_marker();
         pcmdata.clear();
@@ -221,10 +335,18 @@ public:
     static void playerThread(player &plyr, Json::Value &lang) {
         while (true) {
             std::unique_lock<std::mutex> lock(plyr.playbackMtx);
-            plyr.playbackCv.wait(lock, [&plyr] { return !plyr.playerQueue.empty(); });
-            std::function<void()> playback = plyr.playerQueue.front();
-            plyr.playerQueue.pop();
-            playback();
+            plyr.playbackCv.wait(lock, [&plyr] { return !plyr.feq.empty(); });
+            FileEvent pair = plyr.feq.front();
+            plyr.feq.pop();
+            if (!plyr.mh.empty()) {
+                if (plyr.mh.back().first != pair.first) {
+                    plyr.mh.push(Media(pair.first, service::YOUTUBE));
+                }
+            } else {
+                std::cout << "History is empty, adding." << std::endl;
+                plyr.mh.push(Media(pair.first, service::YOUTUBE));
+            }
+            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first), pair.second);
             lock.unlock();
         }
     }
@@ -250,10 +372,9 @@ public:
         taskCv.notify_one();
     }
 
-    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::vector<uint8_t> &pcm, Json::Value &lang) {
-        std::function<void()> playback = std::bind(&playerSubThread, event, pcm, std::ref(lang));
+    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::string code, Json::Value &lang) {
         std::lock_guard<std::mutex> lock(plyr.playbackMtx);
-        plyr.playerQueue.push(playback);
+        plyr.feq.push(FileEvent(code, event));
         std::cout << "[D162IP] Notified one (playbackCv)" << std::endl;
         plyr.playbackCv.notify_one();
     }
