@@ -14,12 +14,16 @@ find_package(MPG123 REQUIRED)
 target_link_libraries(${PROJECT_NAME}
     ${DPP_LIBRARIES}
     ${MPG123_LIBRARIES}
+    ogg
     jsoncpp
+    "/usr/lib/libopus.so"
+    "/usr/lib/libopusfile.so"
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${DPP_INCLUDE_DIR}
     ${MPG123_INCLUDE_DIR}
+    "/usr/include/opus"
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

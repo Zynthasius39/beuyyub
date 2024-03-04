@@ -68,7 +68,11 @@ int main(int argc, char const *argv[]) {
                 return;
             }
             embed.set_title(l.lang["msg"]["d162ip_skip"].asCString());
-            v->voiceclient->skip_to_next_marker();
+            {
+                std::lock_guard<std::mutex> lock(plyr.opusMtx);
+                plyr.action = true;
+            }
+            plyr.opusCv.notify_one();
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "replay") {
             dpp::embed embed = dpp::embed()
@@ -81,7 +85,6 @@ int main(int argc, char const *argv[]) {
             }
             event.thinking();
         } else if (cmd == "status") {
-            bot.log(dpp::loglevel::ll_warning, "Status request from <- " + event.command.get_guild().name);
             dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
             dpp::embed embed = dpp::embed()
                 .set_color(dpp::colors::yellow);
@@ -91,10 +94,26 @@ int main(int argc, char const *argv[]) {
                return;
             }
             else {
-                embed.set_title(l.lang["msg"]["d162ip_status"].asCString());
-                embed.add_field(
+                embed.set_title(l.lang["msg"]["d162ip_status"].asCString())
+                .add_field(
                     std::format("{}{}", l.lang["msg"]["d162ip_status_sub_1"].asCString(), v->voiceclient->is_connected()),
                     std::format("{}{}", l.lang["msg"]["d162ip_status_sub_2"].asCString(), v->voiceclient->get_remaining().to_string())
+                )
+                .add_field(
+                    "",
+                    std::format("{} | Playing", d1162ip::lamp(plyr.playing))
+                )
+                .add_field(
+                    "",
+                    std::format("{} | Paused", d1162ip::lamp(plyr.pause))
+                )
+                .add_field(
+                    "",
+                    std::format("{} | Stop", d1162ip::lamp(plyr.stop))
+                )
+                .add_field(
+                    "",
+                    std::format("{} | Action", d1162ip::lamp(plyr.action))
                 );
             }
             event.reply(dpp::message(event.command.channel_id, embed));
@@ -107,10 +126,20 @@ int main(int argc, char const *argv[]) {
                 event.reply(dpp::message(event.command.channel_id, embed));
                 return;
             }
-            else {
-                const bool paused = v->voiceclient->is_paused();
-                v->voiceclient->pause_audio(!paused);
-                embed.set_title((!paused) ? l.lang["msg"]["d162ip_pause_1"].asCString() : l.lang["msg"]["d162ip_pause_2"].asCString());
+            if (plyr.pause) {
+                embed.set_title(l.lang["msg"]["d162ip_pause_1"].asCString());
+                {
+                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
+                    plyr.pause = false;
+                }
+                plyr.opusCv.notify_one();
+            } else {
+                embed.set_title(l.lang["msg"]["d162ip_pause_2"].asCString());
+                {
+                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
+                    plyr.pause = true;
+                }
+                plyr.opusCv.notify_one();
             }
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "stop") {
@@ -122,8 +151,12 @@ int main(int argc, char const *argv[]) {
                 event.reply(dpp::message(event.command.channel_id, embed));
                 return;
             } else {
-                v->voiceclient->stop_audio();
                 embed.set_title(l.lang["msg"]["d162ip_stop"].asCString());
+                {
+                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
+                    plyr.stop = true;
+                }
+                plyr.opusCv.notify_one();
             }
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "history") {

@@ -13,8 +13,6 @@
         "d162ip_play_err_3": "Not playing anything",
         "d162ip_skip": "Skipped",
         "d162ip_replay_err": "Previous URL was invalid",
-        "d162ip_replay_1": "This feature is not avaliable now, please use /play",
-        "d162ip_replay_2": "Latest URL:",
         "d162ip_status_err": "[DEBUG] No voiceconn",
         "d162ip_status": "[DEBUG] voiceconn active",
         "d162ip_status_sub_1": "Cari: ",
@@ -28,6 +26,8 @@
         "d162ip_info_2": "C++ -> D++ MPG123 JSONCPP YT-DLP",
         "d162ip_rpc": "music",
         "d162ip_footer": "Made in Azerbaijan",
+        "d162ip_history_title": "Music History",
+        "d162ip_history_nourl": "Haven't played anything yet!",
         "cmd_play": "Plays music(s)",
         "cmd_url": "Dəstəkləyirəm: YouTube",
         "cmd_skip": "Skip",
@@ -47,7 +47,8 @@
         "d162ip_pfp": "",
         "youtube_icon": "https://cdn-icons-png.flaticon.com/256/1384/1384060.png",
         "spotify_icon": "",
-        "deezer_icon": ""
+        "deezer_icon": "",
+        "history": "http://13.53.129.36:8000/history.png"
     },
     "local": {
         "cacheDir": "../cache",

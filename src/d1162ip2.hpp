@@ -6,7 +6,7 @@
 #include <ogg/ogg.h>
 #include <opus/opusfile.h>
 
-#define COM "'yt-dlp' --write-info-json -x -o {}/{} https://youtu.be/{} > logs 2> errs"
+#define COM "'yt-dlp' --write-info-json -x -o '{}/{}' https://youtu.be/{} > logs 2> errs"
 #define MAX_HISTORY_SIZE 20
 
 class d1162ip {
@@ -60,10 +60,17 @@ public:
         player() : guildName("Unknown"), mh(MAX_HISTORY_SIZE) {};
         player(std::string guildName) : guildName(guildName), mh(MAX_HISTORY_SIZE) {};
 
+        bool playing = false;
+        bool stop = false;
+        bool action = false;
+        bool pause = false;
+        bool fin = false;
         MediaHistory mh;
         FileEventQueue feq;
         std::mutex playbackMtx;
+        std::mutex opusMtx;
         std::condition_variable playbackCv;
+        std::condition_variable opusCv;
         std::string guildName;
     };
 
@@ -100,7 +107,7 @@ public:
         Json::Value lang;
     };
 
-    static void opusStream(std::string filePath, const dpp::slashcommand_t &event) {
+    static void opusStream(std::string filePath, const dpp::slashcommand_t &event, player &plyr) {
         dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
 
         if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
@@ -195,12 +202,46 @@ public:
                 v->voiceclient->send_audio_opus(op.packet, op.bytes, samples / 48);
 
             }
-
         }
-        v->voiceclient->insert_marker();
         ogg_stream_clear(&os);
         ogg_sync_clear(&oy);
-        // std::this_thread::sleep_for(std::chrono::seconds((int)v->voiceclient->get_secs_remaining() - 5));
+
+        std::unique_lock<std::mutex> lock(plyr.opusMtx);
+        plyr.playing = true;
+        while (true) {
+            if (plyr.opusCv.wait_for(lock, std::chrono::seconds((int)v->voiceclient->get_secs_remaining() - 1), [&plyr]{ return plyr.action || plyr.pause || plyr.stop; })) {
+                if (plyr.stop) {
+                    std::cout << "[D162IP] Opus: Stop!" << std::endl;
+                    v->voiceclient->stop_audio();
+                    while (!plyr.feq.empty())
+                        plyr.feq.pop();
+                    plyr.stop = false;
+                    break;
+                }
+                if (plyr.pause) {
+                    std::cout << "[D162IP] Opus: Paused" << std::endl;
+                    v->voiceclient->pause_audio(true);
+                    plyr.opusCv.wait(lock, [&plyr]{ return !plyr.pause || plyr.stop; });
+                    if (plyr.stop) {
+                        std::cout << "[D162IP] Opus: Stop!" << std::endl;
+                        v->voiceclient->stop_audio();
+                        while (!plyr.feq.empty())
+                            plyr.feq.pop();
+                        plyr.stop = false;
+                        plyr.pause = false;
+                        break;
+                    }
+                    v->voiceclient->pause_audio(false);
+                    std::cout << "[D162IP] Opus: Unpaused..." << std::endl;
+                    continue;
+                }
+                std::cout << "[D162IP] Opus: Buffering next sound... SKIP!" << std::endl;
+                plyr.action = false;
+            } else std::cout << "[D162IP] Opus: Buffering next sound... NO SKIP!" << std::endl;
+            v->voiceclient->stop_audio();
+            break;
+        }
+        plyr.playing = false;
     }
 
     static void mp3toRaw(std::string filePath, std::vector<uint8_t>& pcm, const dpp::slashcommand_t &event) {
@@ -318,20 +359,6 @@ public:
     static void sp_main () {};         // Coming soon...
     static void sp_download () {};      // Coming soon...
 
-    static void playerSubThread(const dpp::slashcommand_t event, std::vector<uint8_t> &pcmdata, Json::Value &lang) {
-        bool sw = false;
-        dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
-        if (!v || !v->voiceclient || !v->voiceclient->is_ready()) {
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::red_dirt)
-                .set_title(lang["msg"]["d162ip_play_err_3"].asCString());
-            event.reply(dpp::message(event.command.channel_id, embed));
-        }
-        v->voiceclient->send_audio_raw((uint16_t*)pcmdata.data(), pcmdata.size());
-        v->voiceclient->insert_marker();
-        pcmdata.clear();
-    }
-
     static void playerThread(player &plyr, Json::Value &lang) {
         while (true) {
             std::unique_lock<std::mutex> lock(plyr.playbackMtx);
@@ -343,11 +370,10 @@ public:
                     plyr.mh.push(Media(pair.first, service::YOUTUBE));
                 }
             } else {
-                std::cout << "History is empty, adding." << std::endl;
                 plyr.mh.push(Media(pair.first, service::YOUTUBE));
             }
-            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first), pair.second);
             lock.unlock();
+            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first), pair.second, plyr);
         }
     }
 
@@ -377,5 +403,9 @@ public:
         plyr.feq.push(FileEvent(code, event));
         std::cout << "[D162IP] Notified one (playbackCv)" << std::endl;
         plyr.playbackCv.notify_one();
+    }
+
+    static std::string lamp(bool bl) {
+        return !bl ? ":green_circle:" : ":red_circle:";
     }
 };

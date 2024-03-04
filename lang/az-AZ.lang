@@ -12,9 +12,7 @@
         "d162ip_play_err_2": "Hələki heçnə oxumuram :x:",
         "d162ip_play_err_3": "Hələki heçnə oxumuram :x:",
         "d162ip_skip": "Növbəti musiqiyə ötürdüm :track_next:",
-        "d162ip_replay_err": "Hələki oxuna biləcək link göndərilməyib! :dromedary_camel:",
-        "d162ip_replay_1": "Hələki gücüm çatmır bunu eləməyə. /play ilə idarə edin!",
-        "d162ip_replay_2": "Son istifadə edilən link:",
+        "d162ip_replay_err": "Bu yaxında musiqi oxumamışam!",
         "d162ip_status_err": "[DEBUQ] Kanal yoxdu",
         "d162ip_status": "[DEBUQ] Kanala qoşulmuşam",
         "d162ip_status_sub_1": "Cari: ",
@@ -28,6 +26,8 @@
         "d162ip_info_2": "C++ -> D++ MPG123 JSONCPP YT-DLP",
         "d162ip_rpc": "Musiqi",
         "d162ip_footer": "Miniaturun başlığı",
+        "d162ip_history_title": "Musiqi keçmişi",
+        "d162ip_history_nourl": "Hələ heçbir musiqi oxumamışam!",
         "cmd_play": "Musiqinizi əlavə edir",
         "cmd_url": "Dəstəkləyirəm: YouTube",
         "cmd_skip": "Musiqi ötür",
@@ -47,7 +47,8 @@
         "d162ip_pfp": "",
         "youtube_icon": "https://cdn-icons-png.flaticon.com/256/1384/1384060.png",
         "spotify_icon": "",
-        "deezer_icon": ""
+        "deezer_icon": "",
+        "history": "http://13.53.129.36:8000/history.png"
     },
     "local": {
         "cacheDir": "../cache",
