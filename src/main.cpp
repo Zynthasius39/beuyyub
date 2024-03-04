@@ -81,7 +81,7 @@ int main(int argc, char const *argv[]) {
                 embed.set_title(l.lang["msg"]["d162ip_replay_err"].asCString());
                 event.reply(dpp::message(event.command.channel_id, embed));
             } else {
-                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, std::format("watch?v={}", plyr.mh.back().first), std::ref(plyr), std::ref(l.lang)); // Fix detecting video code directly!
+                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, std::format("watch?v={}", plyr.mh.back().code), std::ref(plyr), std::ref(l.lang)); // Fix detecting video code directly!
             }
             event.thinking();
         } else if (cmd == "status") {
@@ -127,14 +127,14 @@ int main(int argc, char const *argv[]) {
                 return;
             }
             if (plyr.pause) {
-                embed.set_title(l.lang["msg"]["d162ip_pause_1"].asCString());
+                embed.set_title(l.lang["msg"]["d162ip_pause_2"].asCString());
                 {
                     std::lock_guard<std::mutex> lock(plyr.opusMtx);
                     plyr.pause = false;
                 }
                 plyr.opusCv.notify_one();
             } else {
-                embed.set_title(l.lang["msg"]["d162ip_pause_2"].asCString());
+                embed.set_title(l.lang["msg"]["d162ip_pause_1"].asCString());
                 {
                     std::lock_guard<std::mutex> lock(plyr.opusMtx);
                     plyr.pause = true;
@@ -160,6 +160,7 @@ int main(int argc, char const *argv[]) {
             }
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "history") {
+            uint8_t num = 1;
             d1162ip::MediaHistory mh = plyr.mh;
             dpp::embed embed = dpp::embed()
             .set_color(dpp::colors::blue_eyes)
@@ -171,7 +172,7 @@ int main(int argc, char const *argv[]) {
             while (!mh.empty()) {
                 embed.add_field(
                     "",
-                    std::format("[{}](https://youtu.be/{})", mh.front().first, mh.front().first)
+                    std::format("#{} [{}](https://youtu.be/{})", num++, mh.front().title, mh.front().code)
                 );
                 mh.pop();
             }

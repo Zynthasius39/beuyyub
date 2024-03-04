@@ -30,10 +30,20 @@ public:
         FILE
     };
 
-    typedef std::pair<std::string, service> Media;
-    typedef std::pair<std::string, const dpp::slashcommand_t> FileEvent;
+    class Media {
+    public:
+        Media(std::string code_) : code(code_) {};
+        Media(std::string code_, std::string title_) : code(code_), title(title_) {};
+        Media(std::string code_, std::string title_, service srv_) : code(code_), title(title_), srv(srv_) {};
+
+        std::string title;
+        std::string code;
+        service srv;
+    };
+
+    typedef std::pair<Media, const dpp::slashcommand_t> MediaEvent;
     typedef std::queue<Media> MediaQueue;
-    typedef std::queue<FileEvent> FileEventQueue;
+    typedef std::queue<MediaEvent> MediaEventQueue;
 
     class MediaHistory {
     public:
@@ -66,7 +76,7 @@ public:
         bool pause = false;
         bool fin = false;
         MediaHistory mh;
-        FileEventQueue feq;
+        MediaEventQueue feq;
         std::mutex playbackMtx;
         std::mutex opusMtx;
         std::condition_variable playbackCv;
@@ -301,7 +311,7 @@ public:
     }
 
     static void yt_main(dpp::cluster &bot, const dpp::slashcommand_t event, std::string lastUrl, player &plyr, Json::Value &lang) {
-        return_code rc; 
+        return_code rc;
         dpp::embed embed = dpp::embed()
             .set_color(dpp::colors::aqua);
         std::string code = yt_code(lastUrl, rc);
@@ -317,7 +327,6 @@ public:
                 event.edit_original_response(dpp::message(lang["msg"]["d162ip_download"].asString()));
                 yt_download(code, rc, lang["local"]["cacheDir"].asString());
             }
-            
 
             std::ifstream urlJson(std::format("{}/{}.info.json", lang["local"]["cacheDir"].asString(), code), std::ifstream::binary);
             Json::Value urlName;
@@ -340,8 +349,20 @@ public:
             else bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT]", lang["msg"]["backend_added"].asString(), code));
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
 
+            Media media(code, urlName["title"].asString(), service::YOUTUBE);
+
+            {
+                std::lock_guard<std::mutex> lock(plyr.playbackMtx);
+                if (!plyr.mh.empty()) {
+                    if (plyr.mh.back().code != media.code) {
+                        plyr.mh.push(Media(media.code, media.title, media.srv));
+                    }
+                } else {
+                    plyr.mh.push(Media(media.code, media.title, media.srv));
+                }
+            }
             // Play
-            add_player_task(event, plyr, code, lang);
+            add_player_task(event, plyr, code, media, lang);
         } else {
             embed.set_title(lang["msg"]["url_invalid"].asCString());
             event.edit_original_response(dpp::message(event.command.channel_id, embed));
@@ -363,17 +384,10 @@ public:
         while (true) {
             std::unique_lock<std::mutex> lock(plyr.playbackMtx);
             plyr.playbackCv.wait(lock, [&plyr] { return !plyr.feq.empty(); });
-            FileEvent pair = plyr.feq.front();
+            MediaEvent pair = plyr.feq.front();
             plyr.feq.pop();
-            if (!plyr.mh.empty()) {
-                if (plyr.mh.back().first != pair.first) {
-                    plyr.mh.push(Media(pair.first, service::YOUTUBE));
-                }
-            } else {
-                plyr.mh.push(Media(pair.first, service::YOUTUBE));
-            }
             lock.unlock();
-            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first), pair.second, plyr);
+            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first.code), pair.second, plyr);
         }
     }
 
@@ -398,9 +412,9 @@ public:
         taskCv.notify_one();
     }
 
-    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::string code, Json::Value &lang) {
+    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::string code, Media &metadata, Json::Value &lang) {
         std::lock_guard<std::mutex> lock(plyr.playbackMtx);
-        plyr.feq.push(FileEvent(code, event));
+        plyr.feq.push(MediaEvent(metadata, event));
         std::cout << "[D162IP] Notified one (playbackCv)" << std::endl;
         plyr.playbackCv.notify_one();
     }
