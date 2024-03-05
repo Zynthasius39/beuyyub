@@ -1,0 +1,1 @@
+/usr/bin/c++  -DDPP_CORO=ON CMakeFiles/beuyyub.dir/main.cpp.o CMakeFiles/beuyyub.dir/youtubeapi.cpp.o -o beuyyub  /usr/lib/libdpp.so /usr/lib/libcurl.so /usr/lib/libmpg123.so -logg -ljsoncpp /usr/lib/libopus.so /usr/lib/libopusfile.so 

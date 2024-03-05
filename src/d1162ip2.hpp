@@ -2,6 +2,7 @@
 
 #include <dpp/dpp.h>
 #include <json/json.h>
+#include <curl/curl.h>
 #include <mpg123.h>
 #include <ogg/ogg.h>
 #include <opus/opusfile.h>
@@ -376,6 +377,8 @@ public:
             rc = return_code::SUCCESS;
         } else rc = return_code::USER_ERROR;
     }
+
+    static Json::Value yt_query(std::string code, int count);
 
     static void sp_main () {};         // Coming soon...
     static void sp_download () {};      // Coming soon...

@@ -38,6 +38,7 @@
         "cmd_join": "Səs kanalına qoş",
         "cmd_disconn": "Səs kanalını tərk et",
         "cmd_info": "Haqqımda",
+        "cmd_history": "Musiqi keçmişi",
         "backend_added": "Added [c] -> ",
         "backend_cached": "Added     -> ",
         "backend_runtime_err": "popen() failed!"

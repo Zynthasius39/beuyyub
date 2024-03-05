@@ -37,6 +37,7 @@ int main(int argc, char const *argv[]) {
 
     bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
         const std::string cmd = event.command.get_command_name();
+        dpp::command_interaction cmd_ops = event.command.get_command_interaction();
         if (cmd == "join") {
             dpp::guild* g = dpp::find_guild(event.command.guild_id);
             dpp::embed embed = dpp::embed()
@@ -55,9 +56,16 @@ int main(int argc, char const *argv[]) {
                 .set_title(l.lang["msg"]["vc_disconn"].asCString());
             event.reply(dpp::message(event.command.channel_id, embed));
         } else if (cmd == "play") {
-            std::string lasturl = std::get<std::string>(event.get_parameter("url"));
-            event.thinking();
-            d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, lasturl, std::ref(plyr), std::ref(l.lang));
+            auto subcmd = cmd_ops.options[0];
+            if (subcmd.name == "query") {
+                std::string query = std::get<std::string>(event.get_parameter("query"));
+                event.thinking();
+                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, "watch?v=" + query, std::ref(plyr), std::ref(l.lang));
+            } else if (subcmd.name == "url") {
+                std::string lasturl = std::get<std::string>(event.get_parameter("url"));
+                event.thinking();
+                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, lasturl, std::ref(plyr), std::ref(l.lang));
+            } else event.reply(":octagonal_sign:");
         } else if (cmd == "skip") {
             dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
             dpp::embed embed = dpp::embed()
@@ -201,13 +209,44 @@ int main(int argc, char const *argv[]) {
         }
     });
 
+    bot.on_autocomplete([&bot](const dpp::autocomplete_t & event) {
+        for (auto & opt : event.options) {
+            if (opt.focused) {
+                std::string uservalue = std::get<std::string>(opt.value);
+                dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+                if (!v || !v->voiceclient || !v->voiceclient->is_ready())
+                    break;
+                if (uservalue.length() > 3) {
+                    Json::Value query = d1162ip::yt_query(uservalue, 5);
+                    dpp::interaction_response int_response(dpp::ir_autocomplete_reply);
+
+                    int count = 0;
+                    for (const auto &it : query) {
+                        if (count >= 10) break;
+                        std::string queryClean;
+                        const std::string queryStr = it["title"].asString();
+                        for (char c : queryStr)
+                            if (static_cast<unsigned char>(c) < 128)
+                                queryClean += c;
+                        int_response.add_autocomplete_choice(dpp::command_option_choice(queryClean, it["videoId"].asString()));
+                        count++;
+                    }
+                    bot.interaction_response_create(event.command.id, event.command.token, int_response);
+                }
+                bot.log(dpp::ll_debug, "Autocomplete " + opt.name + " with value '" + uservalue + "' in field " + event.name);
+                break;
+            }
+        }
+	});
+
     bot.on_ready([&bot](const dpp::ready_t& event) {
         bot.set_presence(dpp::presence(dpp::ps_online, dpp::at_game, l.lang["msg"]["d162ip_rpc"].asCString()));
         if (dpp::run_once<struct register_bot_commands>()) {
             std::vector<dpp::slashcommand> slashcommands;
             slashcommands.push_back(
                 dpp::slashcommand("play", l.lang["msg"]["cmd_play"].asCString(), bot.me.id)
-                .add_option(dpp::command_option(dpp::co_string, "url", l.lang["msg"]["cmd_url"].asCString(), true))
+                .add_option(dpp::command_option(dpp::co_string, "url", l.lang["msg"]["cmd_url"].asCString(), false))
+                .add_option(dpp::command_option(dpp::co_string, "query", l.lang["msg"]["cmd_url"].asCString(), false).set_auto_complete(true))
             );
             slashcommands.push_back((dpp::slashcommand("skip", l.lang["msg"]["cmd_skip"].asCString(), bot.me.id)));
             slashcommands.push_back((dpp::slashcommand("pause", l.lang["msg"]["cmd_pause"].asCString(), bot.me.id)));
@@ -216,7 +255,7 @@ int main(int argc, char const *argv[]) {
             slashcommands.push_back((dpp::slashcommand("status", l.lang["msg"]["cmd_status"].asCString(), bot.me.id)));
             slashcommands.push_back((dpp::slashcommand("join", l.lang["msg"]["cmd_join"].asCString(), bot.me.id)));
             slashcommands.push_back((dpp::slashcommand("disconnect", l.lang["msg"]["cmd_disconn"].asCString(), bot.me.id)));
-            slashcommands.push_back((dpp::slashcommand("history", l.lang["msg"]["cmd_info"].asCString(), bot.me.id)));
+            slashcommands.push_back((dpp::slashcommand("history", l.lang["msg"]["cmd_history"].asCString(), bot.me.id)));
             slashcommands.push_back((dpp::slashcommand("info", l.lang["msg"]["cmd_info"].asCString(), bot.me.id)));
             bot.global_bulk_command_create(slashcommands);
         }

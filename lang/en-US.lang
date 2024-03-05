@@ -38,6 +38,7 @@
         "cmd_join": "Join to your voice channel",
         "cmd_disconn": "Disconnect from voice channel",
         "cmd_info": "About me",
+        "cmd_history": "Playback history",
         "backend_added": "Added [c] -> ",
         "backend_cached": "Added     -> ",
         "backend_runtime_err": "popen() failed!"

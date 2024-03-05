@@ -1,0 +1,3 @@
+/home/zynt/Documents/Code/C++/beuyyub-git/src/CMakeFiles/beuyyub.dir
+/home/zynt/Documents/Code/C++/beuyyub-git/src/CMakeFiles/edit_cache.dir
+/home/zynt/Documents/Code/C++/beuyyub-git/src/CMakeFiles/rebuild_cache.dir

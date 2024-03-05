@@ -6,13 +6,16 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/youtubeapi.cpp
 )
 
 find_package(DPP REQUIRED)
+find_package(CURL REQUIRED)
 find_package(MPG123 REQUIRED)
 
 target_link_libraries(${PROJECT_NAME}
     ${DPP_LIBRARIES}
+    ${CURL_LIBRARIES}
     ${MPG123_LIBRARIES}
     ogg
     jsoncpp
@@ -21,6 +24,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
+    src
     ${DPP_INCLUDE_DIR}
     ${MPG123_INCLUDE_DIR}
     "/usr/include/opus"
