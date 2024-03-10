@@ -5,5 +5,5 @@
 + Added limit to song duration for YouTube up to 10 minutes
 + Added history
 + Fixed music to be played up to 1hr
-- Added replay function
++ Added replay function
 - Added playlists

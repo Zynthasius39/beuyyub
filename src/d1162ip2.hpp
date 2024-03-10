@@ -8,6 +8,8 @@
 #include <opus/opusfile.h>
 
 #define COM "'yt-dlp' --write-info-json -x -o '{}/{}' https://youtu.be/{} > logs 2> errs"
+#define PLAYLIST_DIR "../playlists"
+#define CACHE_DIR "../cache"
 #define MAX_HISTORY_SIZE 20
 
 class d1162ip {
@@ -45,9 +47,11 @@ public:
     typedef std::pair<Media, const dpp::slashcommand_t> MediaEvent;
     typedef std::queue<Media> MediaQueue;
     typedef std::queue<MediaEvent> MediaEventQueue;
+    typedef std::queue<std::function<void()>> TaskQueue;
 
     class MediaHistory {
     public:
+        MediaHistory() : maxsize_(MAX_HISTORY_SIZE) {};
         MediaHistory(size_t maxsize) : maxsize_(maxsize) {};
 
         void push(Media media) {
@@ -68,12 +72,40 @@ public:
 
     class player {
     public:
-        player() : guildName("Unknown"), mh(MAX_HISTORY_SIZE) {};
-        player(std::string guildName) : guildName(guildName), mh(MAX_HISTORY_SIZE) {};
+        player(std::string guild_name) : guildName(guild_name) {
+            for (const auto &playlist : std::filesystem::directory_iterator(PLAYLIST_DIR))
+                if (std::filesystem::is_regular_file(playlist.path()))
+                    std::cout << "Found playlist: " << playlist.path() << std::endl;
+        };
+    
+        void setStop() {
+            std::lock_guard<std::mutex> lock(playbackMtx);
+            this->stop = !this->stop;
+        }
+
+        void setPause() {
+            std::lock_guard<std::mutex> lock(playbackMtx);
+            this->pause = !this->pause;
+        }
+
+        void setSkip() {
+            std::lock_guard<std::mutex> lock(playbackMtx);
+            this->skip = !this->skip;
+        }
+
+        void setPlaying() {
+            std::lock_guard<std::mutex> lock(playbackMtx);
+            this->playing = !this->playing;
+        }
+
+        void setPlaying(bool state) {
+            std::lock_guard<std::mutex> lock(playbackMtx);
+            this->playing = state;
+        }
 
         bool playing = false;
         bool stop = false;
-        bool action = false;
+        bool skip = false;
         bool pause = false;
         bool fin = false;
         MediaHistory mh;
@@ -83,28 +115,25 @@ public:
         std::condition_variable playbackCv;
         std::condition_variable opusCv;
         std::string guildName;
+        std::vector<std::string> playlistsPath;
     };
 
-    /* class guild {
+    class guild {
     public:
-        void add_guild(const dpp::snowflake guild_id, std::string guild_name) {
+        void add_guild(dpp::snowflake guild_id, std::string guild_name) {
             m_Guilds.emplace(guild_id, player(guild_name));
         }
 
-        void set_latesturl(const dpp::snowflake guild_id, std::string latesturl) {
-            m_Guilds[guild_id].latestUrl = latesturl;
-        }
-
-        std::string get_latesturl(const dpp::snowflake guild_id) {
-            return m_Guilds[guild_id].latestUrl;
-        }
-
-        std::map<const dpp::snowflake, player>* get_guilds() {
-            return &m_Guilds;
+        player* get_player(dpp::snowflake guild_id) {
+            auto plyr = m_Guilds.find(guild_id);
+            if (plyr != m_Guilds.end())
+                return &(plyr->second);
+            else
+                return nullptr;
         }
     private:
-        std::map<const dpp::snowflake, player> m_Guilds;
-    }; */
+        std::map<dpp::snowflake, player> m_Guilds;
+    };
 
     class language {
     public:
@@ -118,7 +147,7 @@ public:
         Json::Value lang;
     };
 
-    static void opusStream(std::string filePath, const dpp::slashcommand_t &event, player &plyr) {
+    static void opusStream(std::string filePath, const dpp::slashcommand_t &event, player* plyr) {
         dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
 
         if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
@@ -217,29 +246,29 @@ public:
         ogg_stream_clear(&os);
         ogg_sync_clear(&oy);
 
-        std::unique_lock<std::mutex> lock(plyr.opusMtx);
-        plyr.playing = true;
+        std::unique_lock<std::mutex> lock(plyr->opusMtx);
+        plyr->playing = true;
         while (true) {
-            if (plyr.opusCv.wait_for(lock, std::chrono::seconds((int)v->voiceclient->get_secs_remaining() - 1), [&plyr]{ return plyr.action || plyr.pause || plyr.stop; })) {
-                if (plyr.stop) {
+            if (plyr->opusCv.wait_for(lock, std::chrono::seconds((int)v->voiceclient->get_secs_remaining() - 1), [&plyr]{ return plyr->skip || plyr->pause || plyr->stop; })) {
+                if (plyr->stop) {
                     std::cout << "[D162IP] Opus: Stop!" << std::endl;
                     v->voiceclient->stop_audio();
-                    while (!plyr.feq.empty())
-                        plyr.feq.pop();
-                    plyr.stop = false;
+                    while (!plyr->feq.empty())
+                        plyr->feq.pop();
+                    plyr->stop = false;
                     break;
                 }
-                if (plyr.pause) {
+                if (plyr->pause) {
                     std::cout << "[D162IP] Opus: Paused" << std::endl;
                     v->voiceclient->pause_audio(true);
-                    plyr.opusCv.wait(lock, [&plyr]{ return !plyr.pause || plyr.stop; });
-                    if (plyr.stop) {
+                    plyr->opusCv.wait(lock, [&plyr]{ return !plyr->pause || plyr->stop; });
+                    if (plyr->stop) {
                         std::cout << "[D162IP] Opus: Stop!" << std::endl;
                         v->voiceclient->stop_audio();
-                        while (!plyr.feq.empty())
-                            plyr.feq.pop();
-                        plyr.stop = false;
-                        plyr.pause = false;
+                        while (!plyr->feq.empty())
+                            plyr->feq.pop();
+                        plyr->stop = false;
+                        plyr->pause = false;
                         break;
                     }
                     v->voiceclient->pause_audio(false);
@@ -247,12 +276,12 @@ public:
                     continue;
                 }
                 std::cout << "[D162IP] Opus: Buffering next sound... SKIP!" << std::endl;
-                plyr.action = false;
+                plyr->skip = false;
             } else std::cout << "[D162IP] Opus: Buffering next sound... NO SKIP!" << std::endl;
             v->voiceclient->stop_audio();
             break;
         }
-        plyr.playing = false;
+        plyr->playing = false;
     }
 
     static void mp3toRaw(std::string filePath, std::vector<uint8_t>& pcm, const dpp::slashcommand_t &event) {
@@ -294,103 +323,22 @@ public:
         mpg123_delete(mh);
     }
 
-    static std::string yt_code(std::string url, return_code &rc) {
-        std::string substr;
-        if (url.find("youtu.be") != std::string::npos)
-            substr = "outu.be/";
-        else if (url.find("watch?v=") != std::string::npos)
-            substr = "watch?v=";
-        else if (url.find("/shorts/") != std::string::npos)
-            substr = "/shorts/";
-        else{
-            rc = return_code::LINK_INVALID;
-            return std::string();
-        }
-        std::string code = url.substr(((std::search(url.begin(), url.end(), substr.begin(), substr.end())) - url.begin())+8, 11);
-        rc = return_code::SUCCESS;
-        return code;
-    }
-
-    static void yt_main(dpp::cluster &bot, const dpp::slashcommand_t event, std::string lastUrl, player &plyr, Json::Value &lang) {
-        return_code rc;
-        dpp::embed embed = dpp::embed()
-            .set_color(dpp::colors::aqua);
-        std::string code = yt_code(lastUrl, rc);
-        // std::string mp3 = std::format("{}/{}.mp3", lang["local"]["cacheDir"].asString(), code);
-
-        if (rc == return_code::SUCCESS){
-            if (std::filesystem::exists(
-                    std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), code)) &&
-                std::filesystem::exists(
-                    std::format("{}/{}.info.json", lang["local"]["cacheDir"].asString(), code)))
-                rc = return_code::FOUND_IN_CACHE;
-            else {
-                event.edit_original_response(dpp::message(lang["msg"]["d162ip_download"].asString()));
-                yt_download(code, rc, lang["local"]["cacheDir"].asString());
-            }
-
-            std::ifstream urlJson(std::format("{}/{}.info.json", lang["local"]["cacheDir"].asString(), code), std::ifstream::binary);
-            Json::Value urlName;
-            urlJson >> urlName;
-            embed.set_title(lang["msg"]["d162ip_added"].asString())
-                .set_url(urlName["url"].asString())
-                .add_field(
-                    std::format("{} [*{}*]", urlName["title"].asString(), urlName["channel"].asString()),
-                    urlName["webpage_url"].asString()
-                )
-                .set_image(urlName["thumbnail"].asString())
-                .set_timestamp(time(0))
-                .set_footer(
-                    dpp::embed_footer()
-                        .set_text(std::format("[{:0>2}:{:0>2}]",  urlName["duration"].asInt64() /60, urlName["duration"].asInt64() %60))
-                        .set_icon(lang["url"]["youtube_icon"].asString())
-                );
-            if (rc == return_code::FOUND_IN_CACHE)
-                bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT] Cached", lang["msg"]["backend_cached"].asString(), code));
-            else bot.log(dpp::loglevel::ll_debug, std::format("{}{} [YT]", lang["msg"]["backend_added"].asString(), code));
-            event.edit_original_response(dpp::message(event.command.channel_id, embed));
-
-            Media media(code, urlName["title"].asString(), service::YOUTUBE);
-
-            {
-                std::lock_guard<std::mutex> lock(plyr.playbackMtx);
-                if (!plyr.mh.empty()) {
-                    if (plyr.mh.back().code != media.code) {
-                        plyr.mh.push(Media(media.code, media.title, media.srv));
-                    }
-                } else {
-                    plyr.mh.push(Media(media.code, media.title, media.srv));
-                }
-            }
-            // Play
-            add_player_task(event, plyr, code, media, lang);
-        } else {
-            embed.set_title(lang["msg"]["url_invalid"].asCString());
-            event.edit_original_response(dpp::message(event.command.channel_id, embed));
-        }
-    }
-
-    static void yt_download(std::string code, return_code &rc, std::string cacheDir) {
-        std::string cmd = std::format(COM, cacheDir, code, code);
-        int rcc = system(cmd.c_str());
-        if (rcc == 0){
-            rc = return_code::SUCCESS;
-        } else rc = return_code::USER_ERROR;
-    }
-
+    static void yt_main(dpp::cluster &bot, const dpp::slashcommand_t event, std::string lastUrl, player* plyr, Json::Value &lang);
+    static void yt_download(std::string code, return_code &rc, std::string cacheDir);
     static Json::Value yt_query(std::string code, int count);
+    static std::string yt_code(std::string url, d1162ip::return_code &rc);
 
     static void sp_main () {};         // Coming soon...
     static void sp_download () {};      // Coming soon...
 
-    static void playerThread(player &plyr, Json::Value &lang) {
+    static void playerThread(player* plyr, Json::Value &lang) {
         while (true) {
-            std::unique_lock<std::mutex> lock(plyr.playbackMtx);
-            plyr.playbackCv.wait(lock, [&plyr] { return !plyr.feq.empty(); });
-            MediaEvent pair = plyr.feq.front();
-            plyr.feq.pop();
+            std::unique_lock<std::mutex> lock(plyr->playbackMtx);
+            plyr->playbackCv.wait(lock, [&plyr] { return !plyr->feq.empty(); });
+            MediaEvent pair = plyr->feq.front();
+            plyr->feq.pop();
             lock.unlock();
-            opusStream(std::format("{}/{}.opus", lang["local"]["cacheDir"].asString(), pair.first.code), pair.second, plyr);
+            opusStream(std::format("{}/{}.opus", CACHE_DIR, pair.first.code), pair.second, plyr);
         }
     }
 
@@ -415,11 +363,11 @@ public:
         taskCv.notify_one();
     }
 
-    static void add_player_task(const dpp::slashcommand_t &event, player &plyr, std::string code, Media &metadata, Json::Value &lang) {
-        std::lock_guard<std::mutex> lock(plyr.playbackMtx);
-        plyr.feq.push(MediaEvent(metadata, event));
+    static void add_player_task(const dpp::slashcommand_t &event, player* plyr, std::string code, Media &metadata, Json::Value &lang) {
+        std::lock_guard<std::mutex> lock(plyr->playbackMtx);
+        plyr->feq.push(MediaEvent(metadata, event));
         std::cout << "[D162IP] Notified one (playbackCv)" << std::endl;
-        plyr.playbackCv.notify_one();
+        plyr->playbackCv.notify_one();
     }
 
     static std::string lamp(bool bl) {

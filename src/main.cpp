@@ -12,13 +12,10 @@
 #define LANG "../lang/az-AZ.lang"
 
 d1162ip::language l(LANG);
-// d1162ip::guild guilds;
+d1162ip::guild guilds;
+d1162ip::TaskQueue taskQueue;
 std::mutex taskMtx;
 std::condition_variable taskCv;
-std::queue<std::function<void()>> taskQueue;
-
-// Debugging:
-d1162ip::player plyr;
 
 int main(int argc, char const *argv[]) {
     std::string token;
@@ -29,183 +26,186 @@ int main(int argc, char const *argv[]) {
     dpp::cluster bot(token, dpp::i_default_intents | dpp::i_message_content);
 
     std::thread T_Download(d1162ip::taskThread, std::ref(taskQueue), std::ref(taskMtx), std::ref(taskCv));
-    std::thread T_Player(d1162ip::playerThread, std::ref(plyr), std::ref(l.lang));
     T_Download.detach();
-    T_Player.detach();
 
     bot.on_log(dpp::utility::cout_logger());
 
     bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
         const std::string cmd = event.command.get_command_name();
         dpp::command_interaction cmd_ops = event.command.get_command_interaction();
-        if (cmd == "join") {
-            dpp::guild* g = dpp::find_guild(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::yellow);
-            if (!g->connect_member_voice(event.command.get_issuing_user().id)){
-                embed.set_title(l.lang["msg"]["vc_join"].asCString());
+        d1162ip::player* plyrPtr = guilds.get_player(event.command.guild_id);
+        if (!plyrPtr) {
+            throw std::runtime_error("Cannot acquire " + event.command.guild_id.str() + "'s player!");
+        } else {
+            if (cmd == "join") {
+                dpp::guild* g = dpp::find_guild(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::yellow);
+                if (!g->connect_member_voice(event.command.get_issuing_user().id)){
+                    embed.set_title(l.lang["msg"]["vc_join"].asCString());
+                    event.reply(dpp::message(event.command.channel_id, embed));
+                    return;
+                }
+                embed.set_title(l.lang["msg"]["vc_joined"].asCString());
                 event.reply(dpp::message(event.command.channel_id, embed));
-                return;
-            }
-            embed.set_title(l.lang["msg"]["vc_joined"].asCString());
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "disconnect") {
-            event.from->disconnect_voice(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::yellow)
-                .set_title(l.lang["msg"]["vc_disconn"].asCString());
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "play") {
-            auto subcmd = cmd_ops.options[0];
-            if (subcmd.name == "query") {
-                std::string query = std::get<std::string>(event.get_parameter("query"));
+            } else if (cmd == "disconnect") {
+                event.from->disconnect_voice(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::yellow)
+                    .set_title(l.lang["msg"]["vc_disconn"].asCString());
+                event.reply(dpp::message(event.command.channel_id, embed));
+            } else if (cmd == "play") {
+                auto subcmd = cmd_ops.options[0];
+                if (subcmd.name == "query") {
+                    std::string query = std::get<std::string>(event.get_parameter("query"));
+                    event.thinking();
+                    d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, "watch?v=" + query, plyrPtr, std::ref(l.lang));
+                } else if (subcmd.name == "url") {
+                    std::string lasturl = std::get<std::string>(event.get_parameter("url"));
+                    event.thinking();
+                    d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, lasturl, plyrPtr, std::ref(l.lang));
+                } else event.reply(":octagonal_sign:");
+            } else if (cmd == "skip") {
+                dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::aqua);
+                if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
+                    embed.set_title(l.lang["msg"]["d162ip_play_err_1"].asCString());
+                    event.reply(dpp::message(event.command.channel_id, embed));
+                    return;
+                }
+                embed.set_title(l.lang["msg"]["d162ip_skip"].asCString());
+                {
+                    std::lock_guard<std::mutex> lock(plyrPtr->opusMtx);
+                    plyrPtr->skip = true;
+                }
+                plyrPtr->opusCv.notify_one();
+                event.reply(dpp::message(event.command.channel_id, embed));
+            } else if (cmd == "replay") {
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::red);
+                if (plyrPtr->mh.empty()) {
+                    embed.set_title(l.lang["msg"]["d162ip_replay_err"].asCString());
+                    event.reply(dpp::message(event.command.channel_id, embed));
+                } else {
+                    d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, std::format("watch?v={}", plyrPtr->mh.back().code), plyrPtr, std::ref(l.lang)); // Fix detecting video code directly!
+                }
                 event.thinking();
-                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, "watch?v=" + query, std::ref(plyr), std::ref(l.lang));
-            } else if (subcmd.name == "url") {
-                std::string lasturl = std::get<std::string>(event.get_parameter("url"));
-                event.thinking();
-                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, lasturl, std::ref(plyr), std::ref(l.lang));
-            } else event.reply(":octagonal_sign:");
-        } else if (cmd == "skip") {
-            dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::aqua);
-            if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
-                embed.set_title(l.lang["msg"]["d162ip_play_err_1"].asCString());
+            } else if (cmd == "status") {
+                dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::yellow);
+                if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
+                embed.set_title(l.lang["msg"]["d162ip_status_err"].asCString());
                 event.reply(dpp::message(event.command.channel_id, embed));
                 return;
-            }
-            embed.set_title(l.lang["msg"]["d162ip_skip"].asCString());
-            {
-                std::lock_guard<std::mutex> lock(plyr.opusMtx);
-                plyr.action = true;
-            }
-            plyr.opusCv.notify_one();
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "replay") {
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::red);
-            if (plyr.mh.empty()) {
-                embed.set_title(l.lang["msg"]["d162ip_replay_err"].asCString());
-                event.reply(dpp::message(event.command.channel_id, embed));
-            } else {
-                d1162ip::add_task(taskQueue, taskMtx, taskCv, d1162ip::yt_main, std::ref(bot), event, std::format("watch?v={}", plyr.mh.back().code), std::ref(plyr), std::ref(l.lang)); // Fix detecting video code directly!
-            }
-            event.thinking();
-        } else if (cmd == "status") {
-            dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::yellow);
-            if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
-               embed.set_title(l.lang["msg"]["d162ip_status_err"].asCString());
-               event.reply(dpp::message(event.command.channel_id, embed));
-               return;
-            }
-            else {
-                embed.set_title(l.lang["msg"]["d162ip_status"].asCString())
-                .add_field(
-                    std::format("{}{}", l.lang["msg"]["d162ip_status_sub_1"].asCString(), v->voiceclient->is_connected()),
-                    std::format("{}{}", l.lang["msg"]["d162ip_status_sub_2"].asCString(), v->voiceclient->get_remaining().to_string())
-                )
-                .add_field(
-                    "",
-                    std::format("{} | Playing", d1162ip::lamp(plyr.playing))
-                )
-                .add_field(
-                    "",
-                    std::format("{} | Paused", d1162ip::lamp(plyr.pause))
-                )
-                .add_field(
-                    "",
-                    std::format("{} | Stop", d1162ip::lamp(plyr.stop))
-                )
-                .add_field(
-                    "",
-                    std::format("{} | Action", d1162ip::lamp(plyr.action))
-                );
-            }
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "pause") {
-            dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::green_onion);
-            if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
-                embed.set_title(l.lang["msg"]["d162ip_play_err_2"].asCString());
-                event.reply(dpp::message(event.command.channel_id, embed));
-                return;
-            }
-            if (plyr.pause) {
-                embed.set_title(l.lang["msg"]["d162ip_pause_2"].asCString());
-                {
-                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
-                    plyr.pause = false;
                 }
-                plyr.opusCv.notify_one();
-            } else {
-                embed.set_title(l.lang["msg"]["d162ip_pause_1"].asCString());
-                {
-                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
-                    plyr.pause = true;
+                else {
+                    embed.set_title(l.lang["msg"]["d162ip_status"].asCString())
+                    .add_field(
+                        std::format("{}{}", l.lang["msg"]["d162ip_status_sub_1"].asCString(), v->voiceclient->is_connected()),
+                        std::format("{}{}", l.lang["msg"]["d162ip_status_sub_2"].asCString(), v->voiceclient->get_remaining().to_string())
+                    )
+                    .add_field(
+                        "",
+                        std::format("{} | Playing", d1162ip::lamp(plyrPtr->playing))
+                    )
+                    .add_field(
+                        "",
+                        std::format("{} | Paused", d1162ip::lamp(plyrPtr->pause))
+                    )
+                    .add_field(
+                        "",
+                        std::format("{} | Stop", d1162ip::lamp(plyrPtr->stop))
+                    )
+                    .add_field(
+                        "",
+                        std::format("{} | Action", d1162ip::lamp(plyrPtr->skip))
+                    );
                 }
-                plyr.opusCv.notify_one();
-            }
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "stop") {
-            dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
-            dpp::embed embed = dpp::embed()
-                .set_color(dpp::colors::green_apple);
-            if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
-                embed.set_title(l.lang["msg"]["d162ip_play_err_3"].asCString());
                 event.reply(dpp::message(event.command.channel_id, embed));
-                return;
-            } else {
-                embed.set_title(l.lang["msg"]["d162ip_stop"].asCString());
-                {
-                    std::lock_guard<std::mutex> lock(plyr.opusMtx);
-                    plyr.stop = true;
+            } else if (cmd == "pause") {
+                dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::green_onion);
+                if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
+                    embed.set_title(l.lang["msg"]["d162ip_play_err_2"].asCString());
+                    event.reply(dpp::message(event.command.channel_id, embed));
+                    return;
                 }
-                plyr.opusCv.notify_one();
+                if (plyrPtr->pause) {
+                    embed.set_title(l.lang["msg"]["d162ip_pause_2"].asCString());
+                    {
+                        std::lock_guard<std::mutex> lock(plyrPtr->opusMtx);
+                        plyrPtr->pause = false;
+                    }
+                    plyrPtr->opusCv.notify_one();
+                } else {
+                    embed.set_title(l.lang["msg"]["d162ip_pause_1"].asCString());
+                    {
+                        std::lock_guard<std::mutex> lock(plyrPtr->opusMtx);
+                        plyrPtr->pause = true;
+                    }
+                    plyrPtr->opusCv.notify_one();
+                }
+                event.reply(dpp::message(event.command.channel_id, embed));
+            } else if (cmd == "stop") {
+                dpp::voiceconn* v = event.from->get_voice(event.command.guild_id);
+                dpp::embed embed = dpp::embed()
+                    .set_color(dpp::colors::green_apple);
+                if (!v || !v->voiceclient || !v->voiceclient->is_ready()){
+                    embed.set_title(l.lang["msg"]["d162ip_play_err_3"].asCString());
+                    event.reply(dpp::message(event.command.channel_id, embed));
+                    return;
+                } else {
+                    embed.set_title(l.lang["msg"]["d162ip_stop"].asCString());
+                    {
+                        std::lock_guard<std::mutex> lock(plyrPtr->opusMtx);
+                        plyrPtr->stop = true;
+                    }
+                    plyrPtr->opusCv.notify_one();
+                }
+                event.reply(dpp::message(event.command.channel_id, embed));
+            } else if (cmd == "history") {
+                uint8_t num = 1;
+                d1162ip::MediaHistory mh = plyrPtr->mh;
+                dpp::embed embed = dpp::embed()
+                .set_color(dpp::colors::blue_eyes)
+                .set_title(l.lang["msg"]["d162ip_history_title"].asCString())
+                .set_thumbnail(l.lang["url"]["history"].asCString())
+                .set_timestamp(time(NULL));
+                if (mh.empty())
+                    embed.add_field(l.lang["msg"]["d162ip_history_nourl"].asCString(), "");
+                while (!mh.empty()) {
+                    embed.add_field(
+                        "",
+                        std::format("#{} [{}](https://youtu.be/{})", num++, mh.front().title, mh.front().code)
+                    );
+                    mh.pop();
+                }
+                event.reply(dpp::message(event.command.channel_id, embed));
+            } else if (cmd == "info") {
+                dpp::embed embed = dpp::embed()
+                .set_color(dpp::colors::sti_blue)
+                .set_title(l.lang["msg"]["d162ip_info_title"].asCString())
+                .set_url("https://github.com/Zynthasius39/beuyyub")
+                .set_thumbnail(l.lang["url"]["d162ip_pfp"].asCString())
+                .set_author("BloP", "https://discordapp.com/users/673144818381357057", "https://cdn.discordapp.com/avatars/673144818381357057/7124fcae8e73bbb202a0aaae6aaf8160.png")
+                .set_description(l.lang["msg"]["d162ip_info_desc"].asCString())
+                .set_image(l.lang["url"]["d162ip_info_gif"].asCString())
+                .add_field(
+                    l.lang["msg"]["d162ip_info_1"].asCString(),
+                    l.lang["msg"]["d162ip_info_2"].asCString()
+                )
+                .set_footer(
+                    dpp::embed_footer()
+                    .set_text(l.lang["msg"]["d162ip_footer"].asCString())
+                    .set_icon(l.lang["url"]["d162ip_pfp"].asCString())
+                )
+                .set_timestamp(1706189016);
+                dpp::message msg(event.command.channel_id, embed);
+                event.reply(msg);
             }
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "history") {
-            uint8_t num = 1;
-            d1162ip::MediaHistory mh = plyr.mh;
-            dpp::embed embed = dpp::embed()
-            .set_color(dpp::colors::blue_eyes)
-            .set_title(l.lang["msg"]["d162ip_history_title"].asCString())
-            .set_thumbnail(l.lang["url"]["history"].asCString())
-            .set_timestamp(time(NULL));
-            if (mh.empty())
-                embed.add_field(l.lang["msg"]["d162ip_history_nourl"].asCString(), "");
-            while (!mh.empty()) {
-                embed.add_field(
-                    "",
-                    std::format("#{} [{}](https://youtu.be/{})", num++, mh.front().title, mh.front().code)
-                );
-                mh.pop();
-            }
-            event.reply(dpp::message(event.command.channel_id, embed));
-        } else if (cmd == "info") {
-            dpp::embed embed = dpp::embed()
-            .set_color(dpp::colors::sti_blue)
-            .set_title(l.lang["msg"]["d162ip_info_title"].asCString())
-            .set_url("https://github.com/Zynthasius39/beuyyub")
-            .set_thumbnail(l.lang["url"]["d162ip_pfp"].asCString())
-            .set_author("BloP", "https://discordapp.com/users/673144818381357057", "https://cdn.discordapp.com/avatars/673144818381357057/7124fcae8e73bbb202a0aaae6aaf8160.png")
-            .set_description(l.lang["msg"]["d162ip_info_desc"].asCString())
-            .set_image(l.lang["url"]["d162ip_info_gif"].asCString())
-            .add_field(
-                l.lang["msg"]["d162ip_info_1"].asCString(),
-                l.lang["msg"]["d162ip_info_2"].asCString()
-            )
-            .set_footer(
-                dpp::embed_footer()
-                .set_text(l.lang["msg"]["d162ip_footer"].asCString())
-                .set_icon(l.lang["url"]["d162ip_pfp"].asCString())
-            )
-            .set_timestamp(1706189016);
-            dpp::message msg(event.command.channel_id, embed);
-            event.reply(msg);
         }
     });
 
@@ -220,16 +220,11 @@ int main(int argc, char const *argv[]) {
                     Json::Value query = d1162ip::yt_query(uservalue, 5);
                     dpp::interaction_response int_response(dpp::ir_autocomplete_reply);
 
-                    int count = 0;
+                    // int count = 0;
                     for (const auto &it : query) {
-                        if (count >= 10) break;
-                        std::string queryClean;
-                        const std::string queryStr = it["title"].asString();
-                        for (char c : queryStr)
-                            if (static_cast<unsigned char>(c) < 128)
-                                queryClean += c;
-                        int_response.add_autocomplete_choice(dpp::command_option_choice(queryClean, it["videoId"].asString()));
-                        count++;
+                        // if (count >= 10) break;
+                        int_response.add_autocomplete_choice(dpp::command_option_choice(it["title"].asCString(), it["videoId"].asString()));
+                        // count++;
                     }
                     bot.interaction_response_create(event.command.id, event.command.token, int_response);
                 }
@@ -262,7 +257,7 @@ int main(int argc, char const *argv[]) {
     });
 
     bot.on_guild_create([&bot](const dpp::guild_create_t& event) {
-        bot.log(dpp::loglevel::ll_info, "Joined to -> " + event.created->name);
+        guilds.add_guild(event.created->id, event.created->name);
     });
 
     bot.start(dpp::st_wait);
