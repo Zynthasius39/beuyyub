@@ -103,6 +103,10 @@ int main(int argc, char const *argv[]) {
                 else {
                     embed.set_title(l.lang["msg"]["d162ip_status"].asCString())
                     .add_field(
+                        "Guild name:",
+                        plyrPtr->guildName
+                    )
+                    .add_field(
                         std::format("{}{}", l.lang["msg"]["d162ip_status_sub_1"].asCString(), v->voiceclient->is_connected()),
                         std::format("{}{}", l.lang["msg"]["d162ip_status_sub_2"].asCString(), v->voiceclient->get_remaining().to_string())
                     )
@@ -258,6 +262,9 @@ int main(int argc, char const *argv[]) {
 
     bot.on_guild_create([&bot](const dpp::guild_create_t& event) {
         guilds.add_guild(event.created->id, event.created->name);
+        d1162ip::player* plyrPtr = guilds.get_player(event.created->id);
+        std::thread T_Player(d1162ip::playerThread, plyrPtr, std::ref(l.lang));
+        T_Player.detach();
     });
 
     bot.start(dpp::st_wait);

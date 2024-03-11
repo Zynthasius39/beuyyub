@@ -78,30 +78,30 @@ public:
                     std::cout << "Found playlist: " << playlist.path() << std::endl;
         };
     
-        void setStop() {
-            std::lock_guard<std::mutex> lock(playbackMtx);
-            this->stop = !this->stop;
-        }
+        // void setStop() {
+        //     std::lock_guard<std::mutex> lock(playbackMtx);
+        //     this->stop = !this->stop;
+        // }
 
-        void setPause() {
-            std::lock_guard<std::mutex> lock(playbackMtx);
-            this->pause = !this->pause;
-        }
+        // void setPause() {
+        //     std::lock_guard<std::mutex> lock(playbackMtx);
+        //     this->pause = !this->pause;
+        // }
 
-        void setSkip() {
-            std::lock_guard<std::mutex> lock(playbackMtx);
-            this->skip = !this->skip;
-        }
+        // void setSkip() {
+        //     std::lock_guard<std::mutex> lock(playbackMtx);
+        //     this->skip = !this->skip;
+        // }
 
-        void setPlaying() {
-            std::lock_guard<std::mutex> lock(playbackMtx);
-            this->playing = !this->playing;
-        }
+        // void setPlaying() {
+        //     std::lock_guard<std::mutex> lock(playbackMtx);
+        //     this->playing = !this->playing;
+        // }
 
-        void setPlaying(bool state) {
-            std::lock_guard<std::mutex> lock(playbackMtx);
-            this->playing = state;
-        }
+        // void setPlaying(bool state) {
+        //     std::lock_guard<std::mutex> lock(playbackMtx);
+        //     this->playing = state;
+        // }
 
         bool playing = false;
         bool stop = false;
@@ -121,18 +121,19 @@ public:
     class guild {
     public:
         void add_guild(dpp::snowflake guild_id, std::string guild_name) {
-            m_Guilds.emplace(guild_id, player(guild_name));
+            player* plyrPtr = new player(guild_name);
+            m_Guilds.emplace(guild_id, plyrPtr);
         }
 
         player* get_player(dpp::snowflake guild_id) {
             auto plyr = m_Guilds.find(guild_id);
             if (plyr != m_Guilds.end())
-                return &(plyr->second);
+                return plyr->second;
             else
                 return nullptr;
         }
     private:
-        std::map<dpp::snowflake, player> m_Guilds;
+        std::map<dpp::snowflake, player*> m_Guilds;
     };
 
     class language {
@@ -366,7 +367,7 @@ public:
     static void add_player_task(const dpp::slashcommand_t &event, player* plyr, std::string code, Media &metadata, Json::Value &lang) {
         std::lock_guard<std::mutex> lock(plyr->playbackMtx);
         plyr->feq.push(MediaEvent(metadata, event));
-        std::cout << "[D162IP] Notified one (playbackCv)" << std::endl;
+        std::cout << "[D162IP] Notified one (playbackCv)" + plyr->guildName << std::endl;
         plyr->playbackCv.notify_one();
     }
 
