@@ -19,7 +19,7 @@ Json::Value d1162ip::yt_query(std::string query, int count) {
         }
     }
 
-    std::string url = "https://" + "/api/v1/search?part=snippet&q=" + encodedQuery + "&type=video";
+    std::string url = std::format("https://{}/api/v1/search?part=snippet&q={}&type=video", YTAPI, encodedQuery);
     Json::Value root_json;
 
     curl_global_init(CURL_GLOBAL_ALL);

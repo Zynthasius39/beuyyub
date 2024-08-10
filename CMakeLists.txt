@@ -12,22 +12,25 @@ add_executable(${PROJECT_NAME}
 find_package(DPP REQUIRED)
 find_package(CURL REQUIRED)
 find_package(MPG123 REQUIRED)
+find_package(Opus REQUIRED)
+find_package(JsonCpp REQUIRED)
 
 target_link_libraries(${PROJECT_NAME}
     ${DPP_LIBRARIES}
     ${CURL_LIBRARIES}
     ${MPG123_LIBRARIES}
-    ogg
-    jsoncpp
-    "/usr/lib/libopus.so"
-    "/usr/lib/libopusfile.so"
+    ${OGG_LIBRARIES}
+    ${OPUS_LIBRARIES}
+    ${JSONCPP_LIBRARY}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     src
-    ${DPP_INCLUDE_DIR}
-    ${MPG123_INCLUDE_DIR}
-    "/usr/include/opus"
+    ${DPP_INCLUDE_DIRS}
+    ${MPG123_INCLUDE_DIRS}
+    ${OGG_INCLUDE_DIRS}
+    ${OPUS_INCLUDE_DIRS}
+    ${JSONCPP_INCLUDE_DIRS}
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

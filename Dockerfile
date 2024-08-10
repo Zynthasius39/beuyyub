@@ -1,7 +1,6 @@
 FROM debian:unstable-slim
 LABEL org.opencontainers.image.authors="Zynt, super.alekberov@proton.me"
-RUN apt update && apt upgrade -y
-RUN apt install curl libopus0 libogg0 libjsoncpp25 libopusfile0 yt-dlp -y
+RUN apt update && apt upgrade -y && apt install curl libopus0 libogg0 libjsoncpp25 libopusfile0 yt-dlp -y
 RUN curl https://dl.dpp.dev/latest -o /tmp/libdpp.deb
 RUN apt install ./tmp/libdpp.deb -y && rm /tmp/libdpp.deb
 RUN mkdir -p /bot/cache
