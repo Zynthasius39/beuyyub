@@ -9,7 +9,6 @@ Json::Value d1162ip::yt_query(std::string query, int count) {
     CURL* curl;
     CURLcode res;
     std::string responseBuffer;
-    std::string apiKey = "AIzaSyB79vWVcOKKxiFvU_WeMETh0n-XDmm0s3g"; // Replace with your YouTube Data API key
 
     std::string encodedQuery;
     for (char c : query) {
@@ -20,8 +19,7 @@ Json::Value d1162ip::yt_query(std::string query, int count) {
         }
     }
 
-    // std::string url = "https://www.googleapis.com/youtube/v3/search?key=" + apiKey + "&part=snippet&q=" + encodedQuery + "&maxResults=" + std::to_string(count) + "&fields=items(id(videoId),snippet(title))";
-    std::string url = "https://iv.melmac.space/api/v1/search?part=snippet&q=" + encodedQuery + "&type=video";
+    std::string url = "https://" + "/api/v1/search?part=snippet&q=" + encodedQuery + "&type=video";
     Json::Value root_json;
 
     curl_global_init(CURL_GLOBAL_ALL);

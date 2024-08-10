@@ -7,3 +7,4 @@
 + Fixed music to be played up to 1hr
 + Added replay function
 - Added playlists
+### Stopped Developing ###

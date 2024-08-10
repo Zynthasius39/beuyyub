@@ -8,6 +8,7 @@
 #include <opus/opusfile.h>
 
 #define COM "'yt-dlp' --write-info-json -x -o '{}/{}' https://youtu.be/{} > logs 2> errs"
+#define YTAPI "iv.melmac.space"
 #define PLAYLIST_DIR "../playlists"
 #define CACHE_DIR "../cache"
 #define MAX_HISTORY_SIZE 20
