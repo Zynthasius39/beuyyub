@@ -4,7 +4,7 @@
 [![az](https://img.shields.io/badge/lang-az-teal.svg)](https://github.com/Zynthasius39/beuyyub/blob/master/README.az.md)
 [![tr](https://img.shields.io/badge/lang-tr-red.svg)](https://github.com/Zynthasius39/beuyyub/blob/master/README.tr.md)
 [![en](https://img.shields.io/badge/lang-en-green.svg)](https://github.com/Zynthasius39/beuyyub/blob/master/README.md)
-[![1.1.1-rc1](https://img.shields.io/badge/release-1.1.1_rc1-blue.svg)]()
+[![1.2.0-rc2](https://img.shields.io/badge/release-1.2.0_rc2-blue.svg)]()
 
 **Current features:**
 - Play from YouTube

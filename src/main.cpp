@@ -9,20 +9,28 @@
 
 #include "d1162ip2.hpp"
 
-#define LANG "../lang/az-AZ.lang"
-
-d1162ip::language l(LANG);
 d1162ip::guild guilds;
 d1162ip::TaskQueue taskQueue;
 std::mutex taskMtx;
 std::condition_variable taskCv;
 
 int main(int argc, char const *argv[]) {
-    std::string token;
-    // std::map<dpp::snowflake, d1162ip::mutex> m;
+    
+    const char* token = std::getenv("BOT_TOKEN");
+    if (token == NULL) {
+	    std::cout << "BOT_TOKEN is not set!" << std::endl;
+	    return 1;
+    }
 
-    //Get token from STDIN (probably from an encryption software) 
-    std::cin >> token;
+    const char* lang_file = std::getenv("LANG");
+    if (lang_file == NULL) {
+	    std::cout << "LANG is not set!" << std::endl;
+	    return 1;
+    }
+
+    std::string lang(LANG_DIR);
+    lang += lang_file;
+    d1162ip::language l(lang.c_str());
     dpp::cluster bot(token, dpp::i_default_intents | dpp::i_message_content);
 
     std::thread T_Download(d1162ip::taskThread, std::ref(taskQueue), std::ref(taskMtx), std::ref(taskCv));
@@ -30,7 +38,7 @@ int main(int argc, char const *argv[]) {
 
     bot.on_log(dpp::utility::cout_logger());
 
-    bot.on_slashcommand([&bot](const dpp::slashcommand_t& event) {
+    bot.on_slashcommand([&bot, &l](const dpp::slashcommand_t& event) {
         const std::string cmd = event.command.get_command_name();
         dpp::command_interaction cmd_ops = event.command.get_command_interaction();
         d1162ip::player* plyrPtr = guilds.get_player(event.command.guild_id);
@@ -213,7 +221,7 @@ int main(int argc, char const *argv[]) {
         }
     });
 
-    bot.on_autocomplete([&bot](const dpp::autocomplete_t & event) {
+    bot.on_autocomplete([&bot, &l](const dpp::autocomplete_t & event) {
         for (auto & opt : event.options) {
             if (opt.focused) {
                 std::string uservalue = std::get<std::string>(opt.value);
@@ -238,7 +246,7 @@ int main(int argc, char const *argv[]) {
         }
 	});
 
-    bot.on_ready([&bot](const dpp::ready_t& event) {
+    bot.on_ready([&bot, &l](const dpp::ready_t& event) {
         bot.set_presence(dpp::presence(dpp::ps_online, dpp::at_game, l.lang["msg"]["d162ip_rpc"].asCString()));
         if (dpp::run_once<struct register_bot_commands>()) {
             std::vector<dpp::slashcommand> slashcommands;
@@ -261,7 +269,7 @@ int main(int argc, char const *argv[]) {
         }
     });
 
-    bot.on_guild_create([&bot](const dpp::guild_create_t& event) {
+    bot.on_guild_create([&bot, &l](const dpp::guild_create_t& event) {
         guilds.add_guild(event.created->id, event.created->name);
         d1162ip::player* plyrPtr = guilds.get_player(event.created->id);
         std::thread T_Player(d1162ip::playerThread, plyrPtr, std::ref(l.lang));

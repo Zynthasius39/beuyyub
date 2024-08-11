@@ -9,8 +9,9 @@
 
 #define COM "'yt-dlp' --write-info-json -x -o '{}/{}' https://youtu.be/{} > logs 2> errs"
 #define YTAPI "iv.melmac.space"
-#define PLAYLIST_DIR "../playlists"
-#define CACHE_DIR "../cache"
+#define PLAYLIST_DIR "playlists"
+#define CACHE_DIR "cache"
+#define LANG_DIR "lang"
 #define MAX_HISTORY_SIZE 20
 
 class d1162ip {
