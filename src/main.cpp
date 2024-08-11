@@ -29,7 +29,7 @@ int main(int argc, char const *argv[]) {
     }
 
     std::string lang(LANG_DIR);
-    lang += lang_file;
+    lang = lang + "/" + lang_file;
     d1162ip::language l(lang.c_str());
     dpp::cluster bot(token, dpp::i_default_intents | dpp::i_message_content);
 
@@ -252,8 +252,7 @@ int main(int argc, char const *argv[]) {
             std::vector<dpp::slashcommand> slashcommands;
             slashcommands.push_back(
                 dpp::slashcommand("play", l.lang["msg"]["cmd_play"].asCString(), bot.me.id)
-                // Core Dumping, will fix later
-                // .add_option(dpp::command_option(dpp::co_string, "url", l.lang["msg"]["cmd_url"].asCString(), false))
+                .add_option(dpp::command_option(dpp::co_string, "url", l.lang["msg"]["cmd_url"].asCString(), false))
                 .add_option(dpp::command_option(dpp::co_string, "query", l.lang["msg"]["cmd_url"].asCString(), false).set_auto_complete(true))
             );
             slashcommands.push_back((dpp::slashcommand("skip", l.lang["msg"]["cmd_skip"].asCString(), bot.me.id)));

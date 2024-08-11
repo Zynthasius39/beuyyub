@@ -1,0 +1,24 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Login to Docker Hub
+      run: docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+    - uses: actions/checkout@v4
+    - name: Setting environmental variables
+      run: echo "RELEASE=$(grep -Po '(?<=VERSION )[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)" >> $GITHUB_ENV; echo "PROJECT=$(grep -Po '(?<=project\()[^\s\)]+' CMakeLists.txt)" >> $GITHUB_ENV
+    - name: Build Docker images
+      run: docker build $GITHUB_WORKSPACE --file Dockerfile --tag $PROJECT
+    - name: Tag Docker images
+      run: docker tag $PROJECT ${{ secrets.DOCKERHUB_USERNAME }}/$PROJECT:$RELEASE; docker tag $PROJECT ${{ secrets.DOCKERHUB_USERNAME }}/$PROJECT:latest
+    - name: Push images to Docker Hub
+      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/$PROJECT:$RELEASE; docker push ${{ secrets.DOCKERHUB_USERNAME }}/$PROJECT:latest

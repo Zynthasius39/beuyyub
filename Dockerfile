@@ -12,7 +12,7 @@ RUN ["cmake","--build","/bot/build"]
 
 FROM debian:unstable-slim
 LABEL org.opencontainers.image.authors="Zynt, super.alekberov@proton.me"
-RUN apt update && apt upgrade -y && apt install libcurl4 libopus0 libogg0 libjsoncpp25 libopusfile0 -y
+RUN apt update && apt upgrade -y && apt install yt-dlp libcurl4 libopus0 libogg0 libjsoncpp25 libopusfile0 -y
 COPY --from=0 /tmp/libdpp.deb /tmp/libdpp.deb
 RUN apt install ./tmp/libdpp.deb -y && rm /tmp/libdpp.deb
 RUN mkdir -p /bot/cache /bot/media /bot/playlists
