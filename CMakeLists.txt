@@ -1,19 +1,22 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(beuyyub VERSION 1.2.0 DESCRIPTION "Official IT1162i Discord bot")
+project(beuyyub VERSION 1.2.1 DESCRIPTION "Official IT1162i Discord bot")
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDPP_CORO=ON")
+set(CMAKE_CURRENT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 add_executable(${PROJECT_NAME}
-    src/main.cpp
-    src/youtubeapi.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/d1162ip2.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/d1162ip2.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/youtube.cpp
 )
 
 find_package(DPP REQUIRED)
 find_package(CURL REQUIRED)
 find_package(MPG123 REQUIRED)
 find_package(Opus REQUIRED)
-find_package(JsonCpp REQUIRED)
 
 target_link_libraries(${PROJECT_NAME}
     ${DPP_LIBRARIES}
@@ -21,21 +24,17 @@ target_link_libraries(${PROJECT_NAME}
     ${MPG123_LIBRARIES}
     ${OGG_LIBRARIES}
     ${OPUS_LIBRARIES}
-    ${JSONCPP_LIBRARY}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    src
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${DPP_INCLUDE_DIRS}
     ${MPG123_INCLUDE_DIRS}
     ${OGG_INCLUDE_DIRS}
     ${OPUS_INCLUDE_DIRS}
-    ${JSONCPP_INCLUDE_DIRS}
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDPP_CORO=ON")

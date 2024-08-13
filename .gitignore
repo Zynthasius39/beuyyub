@@ -1,2 +1,6 @@
 # Cmake
 build
+*.env
+
+# Code - OSS
+.vscode/
