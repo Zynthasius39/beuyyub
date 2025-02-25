@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Installing dependencies
-      run: sudo bash -c "curl -L https://dl.dpp.dev/latest -o /tmp/dpp.deb && apt update && apt install /tmp/dpp.deb libcurl4-openssl-dev libmpg123-dev libogg-dev libopus-dev libopusfile-dev libjsoncpp-dev -y && rm /tmp/dpp.deb"
+      run: sudo bash -c "curl -L https://github.com/brainboxdotcc/DPP/releases/download/v10.0.30/libdpp-10.0.30-linux-x64.deb -o /tmp/dpp.deb && apt update && apt install /tmp/dpp.deb libcurl4-openssl-dev libmpg123-dev libogg-dev libopus-dev libopusfile-dev libjsoncpp-dev -y && rm /tmp/dpp.deb"
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build
     - name: Build
